@@ -22,6 +22,8 @@ Create a token in your DagsHub account settings (Tokens). Enter it only at the h
 
 ## Train and retrieve
 
+Materialize the training dataset first: run `python dataset.py` to regenerate the original public digits data, or `dvc pull data/digits.csv.dvc -r myazure` after configuring Azure. See the DVC extension below.
+
 ```powershell
 .\.venv\Scripts\python train.py
 .\.venv\Scripts\python retrieve_model.py
@@ -82,3 +84,63 @@ Remove-Item Env:MLFLOW_TRACKING_PASSWORD
 ```
 
 References: [DagsHub experiment tracking](https://dagshub.com/docs/feature_guide/experiment_tracking/), [MLflow run search](https://mlflow.org/docs/latest/ml/search/search-runs/), [Docker build secrets](https://docs.docker.com/build/building/secrets/).
+
+## DVC extension (feature/dvc-integration)
+
+Git versions code and small DVC pointers. DVC versions datasets in its local content-addressed cache and Azure Blob Storage. MLflow/DagsHub continues to track training runs and model artifacts. Training records the digits CSV SHA-256 with each run; Docker still downloads only the model from DagsHub at build time. Azure credentials and raw datasets never enter the Docker context. The original serving endpoint and model selection logic are unchanged.
+
+Install the optional development tooling in your project environment (not in Docker):
+
+```powershell
+.\.venv\Scripts\python -m pip install -r requirements-dvc.txt
+$env:DVC_SITE_CACHE_DIR = Join-Path $PWD '.dvc/site-cache'
+```
+
+`python dataset.py` exports sklearn's original 1797 digits in original order, 64 pixels plus target, with deterministic integer formatting and LF line endings. `train.py` reads this DVC-tracked CSV and fails clearly if it is absent. CI regenerates this public dataset with the pinned sklearn version and tests equality with the original data. It uses no Azure secrets. For historical experiments, restore from DVC rather than regenerating data. `requirements.txt`, FastAPI and Docker are unchanged; DVC is an optional training/development dependency.
+
+### Azure setup
+
+You must create your own storage account and private blob container; the course account and exposed SAS are not used. In https://portal.azure.com:
+
+1. Choose your subscription and create a resource group and Storage account. Choose a globally unique lowercase name, Standard performance and locally redundant storage for this demo; review costs before creating.
+2. Open the account → Data storage → Containers. Create a private container such as `dvc-data`. Keep anonymous blob access disabled.
+3. Generate a fresh container SAS with Read, Add, Create, Write and List permissions, HTTPS only and a short expiry. Prefer a user delegation SAS if available; your Azure administrator may need to grant storage data access.
+4. Run `. .\configure-azure.ps1` in your own PowerShell. Enter account and container names at the prompts, and the SAS only at the hidden prompt. Never paste it in chat. The script sets `AZURE_STORAGE_ACCOUNT` and `AZURE_STORAGE_SAS_TOKEN` only for this shell, and stores only the real remote URL in ignored `.dvc/config.local`. No credentials are written to disk or passed as command arguments.
+
+`myazure` is the default DVC remote. Its checked-in URL is explicitly pending until resource setup. The local URL override survives Git tag switches. No Azure secrets are needed in GitHub Actions. Close the shell after use or remove `Env:AZURE_STORAGE_SAS_TOKEN` and `Env:AZURE_STORAGE_ACCOUNT`. Do not print credential environment variables or enable debug logs.
+
+### Dataset versions and commands
+
+`data/digits.csv` is for training. `data/dvc_demo.csv` is solely the course exercise: tag `dvc-demo-v1` references header `id,score` plus records `1,80` and `2,90`; tag `dvc-demo-v2` adds `3,95`. Both CSVs are Git-ignored, and their `.dvc` pointers are committed. These tags are local until explicit publication approval.
+
+```powershell
+.\.venv\Scripts\dvc status
+# After intentionally editing data:
+.\.venv\Scripts\dvc add data/dvc_demo.csv
+git add data/dvc_demo.csv.dvc
+git commit -m 'Update demo dataset pointer'
+# Upload all tagged versions, not only the current version:
+.\.venv\Scripts\dvc push --all-tags -r myazure
+.\.venv\Scripts\dvc pull -r myazure
+.\.venv\Scripts\dvc status -c -r myazure
+```
+
+From a clean named branch, run `.\azure-roundtrip.ps1` after Azure setup. It pushes both tags, uses a fresh temporary cache for each pull, verifies exact contents and row counts, and returns to the starting branch. It keeps proof caches for inspection and does not delete cloud objects. Its Azure operations remain unverified until your account is configured.
+
+For the manual experiment, save your branch name, switch to each tag, pull, verify and return:
+
+```powershell
+$originalBranch = git branch --show-current
+git switch --detach dvc-demo-v1
+.\.venv\Scripts\dvc pull -r myazure
+.\.venv\Scripts\python verify_dvc.py --version 1
+git switch --detach dvc-demo-v2
+.\.venv\Scripts\dvc pull -r myazure
+.\.venv\Scripts\python verify_dvc.py --version 2
+git switch $originalBranch
+.\.venv\Scripts\dvc pull -r myazure
+```
+
+Until Azure exists, replace `dvc pull` with `dvc checkout` to restore from the populated local cache. This proves local restoration only. `verify_dvc.py` checks exact demo contents, pointer changes, Git exclusions and DVC configuration. Avoid `dvc gc` during this exercise because historical objects are required. Never commit the course PDF, local configuration, environments, datasets or caches.
+
+References: [DVC Azure authentication](https://doc.dvc.org/user-guide/data-management/remote-storage/azure-blob-storage), [Azure container SAS setup](https://learn.microsoft.com/azure/cognitive-services/translator/document-translation/create-sas-tokens?tabs=Containers).

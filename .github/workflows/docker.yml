@@ -17,6 +17,7 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
       - run: |
+          python dataset.py
           python train.py
           python retrieve_model.py
           python -m pytest -q

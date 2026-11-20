@@ -1,0 +1,5 @@
+[core]
+    analytics = false
+    remote = myazure
+['remote "myazure"']
+    url = azure://pending-container/mlflow-fastapi-assignment
