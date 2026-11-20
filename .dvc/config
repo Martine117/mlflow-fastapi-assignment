@@ -2,4 +2,5 @@
     analytics = false
     remote = myazure
 ['remote "myazure"']
-    url = azure://pending-container/mlflow-fastapi-assignment
+    url = azure://dvc
+    account_name = wut2026

@@ -100,18 +100,18 @@ $env:DVC_SITE_CACHE_DIR = Join-Path $PWD '.dvc/site-cache'
 
 ### Azure setup
 
-You must create your own storage account and private blob container; the course account and exposed SAS are not used. In https://portal.azure.com:
+The authorized coursework remote is `myazure`, account `wut2026`, container `dvc`, URL `azure://dvc`. Azure read-only access, targeted uploads and fresh-cache restoration of both versions succeeded on 2026-11-20; see `DVC-VERIFICATION.md`. The authorized course credential is stored only in ignored `.dvc/config.local` and is never distributed with Git. Future access requires your own authorized credential. To use a separate account instead, in https://portal.azure.com:
 
 1. Choose your subscription and create a resource group and Storage account. Choose a globally unique lowercase name, Standard performance and locally redundant storage for this demo; review costs before creating.
 2. Open the account → Data storage → Containers. Create a private container such as `dvc-data`. Keep anonymous blob access disabled.
 3. Generate a fresh container SAS with Read, Add, Create, Write and List permissions, HTTPS only and a short expiry. Prefer a user delegation SAS if available; your Azure administrator may need to grant storage data access.
 4. Run `. .\configure-azure.ps1` in your own PowerShell. Enter account and container names at the prompts, and the SAS only at the hidden prompt. Never paste it in chat. The script sets `AZURE_STORAGE_ACCOUNT` and `AZURE_STORAGE_SAS_TOKEN` only for this shell, and stores only the real remote URL in ignored `.dvc/config.local`. No credentials are written to disk or passed as command arguments.
 
-`myazure` is the default DVC remote. Its checked-in URL is explicitly pending until resource setup. The local URL override survives Git tag switches. No Azure secrets are needed in GitHub Actions. Close the shell after use or remove `Env:AZURE_STORAGE_SAS_TOKEN` and `Env:AZURE_STORAGE_ACCOUNT`. Do not print credential environment variables or enable debug logs.
+`myazure` is the default DVC remote. Its checked-in URL is `azure://dvc` and account name is `wut2026`. The hidden-prompt script optionally configures a different account/container for your shell. The local URL override survives Git tag switches. No Azure secrets are needed in GitHub Actions. Close the shell after use or remove `Env:AZURE_STORAGE_SAS_TOKEN` and `Env:AZURE_STORAGE_ACCOUNT`. Do not print credential environment variables or enable debug logs.
 
 ### Dataset versions and commands
 
-`data/digits.csv` is for training. `data/dvc_demo.csv` is solely the course exercise: tag `dvc-demo-v1` references header `id,score` plus records `1,80` and `2,90`; tag `dvc-demo-v2` adds `3,95`. Both CSVs are Git-ignored, and their `.dvc` pointers are committed. These tags are local until explicit publication approval.
+`data/digits.csv` is for training. `data/dvc_demo.csv` is solely the course exercise: tag `dvc-demo-v1` references header `id,score` plus records `1,80` and `2,90`; tag `dvc-demo-v2` adds `3,95`. Both CSVs are Git-ignored, and their `.dvc` pointers are committed. These tags remain local; only the feature branch is published. After cloning the feature branch, recreate them with `git tag dvc-demo-v1 5d343cf` and `git tag dvc-demo-v2 4ab4231`.
 
 ```powershell
 .\.venv\Scripts\dvc status
@@ -125,12 +125,15 @@ git commit -m 'Update demo dataset pointer'
 .\.venv\Scripts\dvc status -c -r myazure
 ```
 
-From a clean named branch, run `.\azure-roundtrip.ps1` after Azure setup. It pushes both tags, uses a fresh temporary cache for each pull, verifies exact contents and row counts, and returns to the starting branch. It keeps proof caches for inspection and does not delete cloud objects. Its Azure operations remain unverified until your account is configured.
+From a clean named branch, run `.\azure-roundtrip.ps1` after Azure setup. It pushes both tags, uses a fresh temporary cache for each pull, verifies exact contents and row counts, and returns to the starting branch. It keeps proof caches for inspection and does not delete cloud objects. Equivalent targeted Azure operations have passed for both versions, including content-hash checks in fresh caches. This helper requires authorized credentials in the current shell.
 
 For the manual experiment, save your branch name, switch to each tag, pull, verify and return:
 
 ```powershell
 $originalBranch = git branch --show-current
+# Preserve the authorized location across historical tag configurations:
+.\.venv\Scripts\dvc remote modify --local myazure url azure://dvc
+.\.venv\Scripts\dvc remote modify --local myazure account_name wut2026
 git switch --detach dvc-demo-v1
 .\.venv\Scripts\dvc pull -r myazure
 .\.venv\Scripts\python verify_dvc.py --version 1
@@ -141,6 +144,6 @@ git switch $originalBranch
 .\.venv\Scripts\dvc pull -r myazure
 ```
 
-Until Azure exists, replace `dvc pull` with `dvc checkout` to restore from the populated local cache. This proves local restoration only. `verify_dvc.py` checks exact demo contents, pointer changes, Git exclusions and DVC configuration. Avoid `dvc gc` during this exercise because historical objects are required. Never commit the course PDF, local configuration, environments, datasets or caches.
+For local-only verification, replace `dvc pull` with `dvc checkout` to restore from the populated local cache. This proves local restoration only. `verify_dvc.py` checks exact demo contents, pointer changes, Git exclusions and DVC configuration. Avoid `dvc gc` during this exercise because historical objects are required. Never commit the course PDF, local configuration, environments, datasets or caches.
 
 References: [DVC Azure authentication](https://doc.dvc.org/user-guide/data-management/remote-storage/azure-blob-storage), [Azure container SAS setup](https://learn.microsoft.com/azure/cognitive-services/translator/document-translation/create-sas-tokens?tabs=Containers).
