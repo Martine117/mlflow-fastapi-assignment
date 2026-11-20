@@ -1,0 +1,57 @@
+name: Verify model and Docker image
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  local-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: |
+          python train.py
+          python retrieve_model.py
+          python -m pytest -q
+        env:
+          MLFLOW_TRACKING_URI: file:${{ github.workspace }}/mlruns
+  docker:
+    # Fork PRs cannot access repository secrets. Never expose them through pull_request_target.
+    if: github.event_name != 'pull_request'
+    needs: local-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build with fresh model retrieval
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          push: false
+          tags: digits:test
+          no-cache: true
+          secrets: |
+            mlflow_username=${{ secrets.MLFLOW_TRACKING_USERNAME }}
+            mlflow_password=${{ secrets.MLFLOW_TRACKING_PASSWORD }}
+      - name: Verify without network or credentials
+        run: |
+          docker run -d --network none --name digits digits:test
+          docker cp smoke.py digits:/tmp/smoke.py
+          docker exec digits python /tmp/smoke.py
+          docker cp digits:/app/models/provenance.json provenance.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: model-provenance
+          path: provenance.json
+      - if: always()
+        run: |
+          docker logs digits || true
+          docker rm -f digits || true
