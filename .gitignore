@@ -7,3 +7,10 @@ models/
 mlruns/
 *.db
 *.log
+.dvc/config.local
+.dvc/cache/
+.dvc/tmp/
+.dvc/site-cache/
+.verification/
+*.pem
+*.key

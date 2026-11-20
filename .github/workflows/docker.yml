@@ -1,7 +1,7 @@
 name: Verify model and Docker image
 on:
   push:
-    branches: [main]
+    branches: [main, feature/dvc-integration]
   pull_request:
   workflow_dispatch:
 permissions:
@@ -17,6 +17,7 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
       - run: |
+          python dataset.py
           python train.py
           python retrieve_model.py
           python -m pytest -q
